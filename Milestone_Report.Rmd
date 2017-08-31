@@ -1,0 +1,158 @@
+---
+title: "Milestone Report"
+author: "PF"
+date: "4 8 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Capstone Project
+
+The goal of the capstone project is to understand and build predictive text models. Moreover, a data product needs to be built to make the predictive text model available. 
+
+## Milestone Report
+
+The goal of this milestone report is to show that I got used to work with the data. It demonstrates that I successfully downloaded and loaded the data, it includes summary statistics, interesting findings and explains how the shiny app with the predictive text model is planned to look like.
+
+## Helpful Packages 
+
+Working with text files and predicting words require specific R packages. The ANLP package helps to sample and clean text data, build N-gram models, backoff algorithms etc. It depends on tm, gdap, RWeka and dplyr packages. I will use the ANLP package to perform the analysis. 
+
+## Data
+
+The data can be downloaded from [https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip).
+
+The data set contains 12 text files in four languages (German, English, Finnish and Russian) from three sources (blogs, news, twitter). I will work with the English texts. 
+
+### Loading the Data
+
+```{r, eval=TRUE, echo=FALSE}
+wd <- setwd("/Users/pfeubli/Desktop/Coursera/Capstone_Project")
+```
+
+```{r, eval=TRUE, warning=FALSE, message=FALSE}
+library(tm)
+library(rJava)
+library(RWeka)
+library(qdap)
+library(ANLP)
+```
+
+```{r, eval=FALSE, warning=FALSE, message=FALSE}
+blogsEN <- readTextFile("final/en_US/en_US.blogs.txt", "UTF-8")
+newsEN <- readTextFile("final/en_US/en_US.news.txt", "UFT-8")
+twitterEN <- readTextFile("final/en_US/en_US.twitter.txt", "UFT-8")
+```
+
+Loading the files shows that they are huge:  
+
+File | Number of Elements | Size
+--------- | ------------- | --------
+blogsEN | 899288 | 248.5 Mb
+newsEN | 1010242 | 249.6 Mb
+twitterEN | 2360148 | 301.4 Mb
+
+### Sampling the Data
+
+For better handling, I sample a random 5% of each of the three text files for further exploration.  
+
+```{r, eval=FALSE}
+set.seed(3461)
+blogsEN <- sampleTextData(blogsEN, 0.05)
+newsEN <- sampleTextData(newsEN, 0.05)
+twitterEN <- sampleTextData(twitterEN, 0.05)
+
+write.csv(blogsEN, file = "final/en_US/random_sample/blogsEN", row.names = FALSE)
+write.csv(newsEN, file = "final/en_US/random_sample/newsEN", row.names = FALSE)
+write.csv(twitterEN, file = "final/en_US/random_sample/twitterEN", row.names = FALSE)
+```
+
+### Creating a Corpus
+
+To be able to work and compute on texts with statistial techniques and data mining, I
+transform the texts into a structured format, the so-called term-document matrix or corpus 
+(Source: Feinerer et al. (2008), Text Mining Infrastructure in R, Journal of Statistical 
+Software, Vol 25, Issue 5).
+
+```{r, eval=TRUE}
+data <- VCorpus(DirSource("final/en_US/random_sample"), 
+                readerControl = list(reader = readPlain, language = "en_US"))
+```
+
+### Cleaning the Data
+
+The function *clearTextData* removes non-English characters, numbers, white spaces, brackets
+and punctuation. It converts all the words to lower case and replaces abbreviations as
+well as contractions with long form. 
+
+```{r, eval=TRUE}
+cleanTextData(data)
+```
+
+As required I also remove profanity. I use the bad words list of Google to get rid of the
+profane words. The list contains 550 words and can be downloaded from 
+[https://www.freewebheaders.com/full-list-of-bad-words-banned-by-google/](https://www.freewebheaders.com/full-list-of-bad-words-banned-by-google/).
+
+```{r, eval=FALSE}
+badwords <- VectorSource(readLines("bad_words.txt"))
+data <- tm_map(data, removeWords, badwords)
+```
+
+## Exploratory Analysis
+
+To get an idea of the words' frequencies in the data, I create a word cloud. 
+
+```{r, eval=TRUE}
+library(wordcloud)
+wordcloud(data, max.words = 150, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+The histograms below show the most frequent (top 20) distinct words, bigrams and trigrams:
+
+```{r, eval=TRUE}
+library(ggplot2)
+library(grid)
+library(gridExtra)
+unigram <- generateTDM(data, N = 1, isTrace = FALSE)
+unigramTop20 <- unigram[1:20,]
+p1 <- ggplot(data = unigramTop20, aes(x=reorder(word, freq), y=freq)) + geom_bar(stat="identity") +
+        ggtitle("Top 20 words") + ylab("Frequency") + xlab("Word") + coord_flip()
+p1
+
+bigram <- generateTDM(data, N = 2, isTrace = FALSE)
+bigramTop20 <- bigram[1:20,]
+p2 <- ggplot(data = bigramTop20, aes(x=reorder(word, freq), y=freq)) + geom_bar(stat="identity") +
+        ggtitle("Top 20 bigrams") + ylab("Frequency") +xlab("Bigrams") + coord_flip()
+p2
+
+trigram <- generateTDM(data, N = 3, isTrace = FALSE)
+trigramTop20 <- trigram[1:20,]
+p3 <- ggplot(data = trigramTop20, aes(x=reorder(word, freq), y=freq)) + geom_bar(stat="identity") +
+        ggtitle("Top 20 trigrams") + ylab("Frequency") + xlab("Trigrams") + coord_flip()
+p3
+```
+
+I also compute the number of unique words needed to cover 50% and 90% of the data. 
+
+```{r, eval=TRUE}
+coverage_unique <- function(x,y){
+        nwords <- 0
+        coverage <- y*sum(x$freq)
+        for(i in 1:nrow(x)){
+                if(nwords >= coverage){return(i)}
+                nwords <- nwords +x$freq[i]
+        }
+}
+coverage_unique(unigram,0.5)
+coverage_unique(unigram, 0.9)
+```
+348 words are needed to cover 50% of the data and 12356 words are needed to cover 90% of the data. These numbers seem to be
+quite small. One reason for the small numbers is that I did not exlude stop words. These are the most common words in a language. If I excluded these stop words, the number of words needed for a certain coverage would certainly increase. However, the exclusion of stop words in a word prediction excercise does not make sense. 
+
+## Prediction Model
+
+To predict the next word, I plan to use a back-off model (e.g., Katz's back-off model). Such a model takes the input and splits it into single words. Then it takes the input's longest ngram and tests with the corresponding n-gram model whether it can predict the next word. If the longest ngram cannot be found in the data, it takes the shorter ngram, does exactly the same and so on until it gets a prediction. 
+
